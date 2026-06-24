@@ -2,6 +2,7 @@ name: Build
 
 on:
   push:
+    branches: [main, master, dev]
     tags: ['v*']
   workflow_dispatch:
 
@@ -386,8 +387,8 @@ jobs:
 
   # ── Commit ──
   commit:
-    needs: [prebuild]
-    if: always() && !cancelled()
+    needs: [prebuild, i18n]
+    if: always() && !cancelled() && !failure()
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -652,6 +653,7 @@ jobs:
     if: |
       always() && !failure() && !cancelled() &&
       needs.prebuild.outputs.do_release == 'false' &&
+      needs.prebuild.outputs.is_tag == 'false' &&
       (needs.build-windows.result != 'skipped' ||
        needs.build-macos.result != 'skipped' ||
        needs.build-linux.result != 'skipped')
