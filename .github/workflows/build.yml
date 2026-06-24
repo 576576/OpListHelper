@@ -287,8 +287,6 @@ jobs:
             ICON_PREFIX=""; [[ "$OUTPUT" != "README.md" ]] && ICON_PREFIX="../../"
             DOC_PREFIX="docs/"; [[ "$OUTPUT" != "README.md" ]] && DOC_PREFIX="../"
 
-            LANGS_ESC=$(echo "$LANGS_HTML" | sed 's/&/\\&/g')
-
             cp "$TEMPLATE" "$OUTPUT"
             # Extract all fields from docs JSON
             DESCRIPTION=$(jq -r '.description' "$DATA")
@@ -429,9 +427,7 @@ jobs:
           [ -n "${{ needs.prebuild.outputs.new_build }}" ] && MSG="$MSG: build ${{ needs.prebuild.outputs.new_build }}"
           [ "${{ needs.prebuild.outputs.i18n_do }}" == "true" ] && MSG="$MSG · i18n"
           [ "${{ needs.prebuild.outputs.docs_do }}" == "true" ] && MSG="$MSG · docs"
-          git commit -m "$MSG
-
-[skip ci]"
+          git commit -m "$MSG"$'\n\n[skip ci]'
           git pull --rebase origin "$GITHUB_REF_NAME" || true
           git push
 
