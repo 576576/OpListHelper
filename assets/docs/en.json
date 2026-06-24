@@ -44,7 +44,7 @@
     "translation_intro": "See [docs/i18n.md](docs/i18n.md) for language status and contribution guide.",
 
     "contributing_guidelines_title": "Contributing Guidelines",
-    "contributing_guidelines_items": "Before you submit a pull request to AlistHelper, please ensure that you have followed these guidelines:\n\n- Code should be well-documented and formatted according to the [Dart Style Guide](https://dart.dev/guides/language/effective-dart/style).\n- All changes should be covered by tests.\n- Commits should be well-written and descriptive, with a clear summary of the changes made and any relevant context.\n- Pull requests should target the `master` branch and include a clear summary of the changes made.",
+    "contributing_guidelines_items": "Before you submit a pull request to AlistHelper, please ensure that you have followed these guidelines:\n\n- Code should be well-documented and formatted according to the [Dart Style Guide](https://dart.dev/guides/language/effective-dart/style).\n- All changes should be covered by tests.\n- Commits should be well-written and descriptive, with a clear summary of the changes made and any relevant context.\n- Pull requests should target the `main` branch and include a clear summary of the changes made.",
 
     "bug_report_title": "Bug Reports and Feature Requests",
     "bug_report_intro": "If you encounter a bug in AlistHelper or have a feature request, please submit an issue to the [issue tracker](https://github.com/Xmarmalade/alisthelper/issues). Please be sure to provide a clear description of the problem or feature request, along with any relevant context or steps to reproduce the issue."

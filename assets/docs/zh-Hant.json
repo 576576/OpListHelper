@@ -44,7 +44,7 @@
     "translation_intro": "請參閱 [docs/i18n.md](docs/i18n.md) 了解各語言狀態和貢獻指南。",
 
     "contributing_guidelines_title": "貢獻指南",
-    "contributing_guidelines_items": "在向 AlistHelper 提交拉取請求之前，請確保你遵循了以下準則：\n\n- 程式碼應該有良好的文件，並根據 [Dart 風格指南](https://dart.dev/guides/language/effective-dart/style) 進行格式化。\n- 所有更改都應該有測試覆蓋。\n- 提交的註解應該寫得清晰明瞭，概述更改內容和任何相關上下文。\n- 拉取請求應該針對 `master` 分支，並包含對更改的清晰概述。",
+    "contributing_guidelines_items": "在向 AlistHelper 提交拉取請求之前，請確保你遵循了以下準則：\n\n- 程式碼應該有良好的文件，並根據 [Dart 風格指南](https://dart.dev/guides/language/effective-dart/style) 進行格式化。\n- 所有更改都應該有測試覆蓋。\n- 提交的註解應該寫得清晰明瞭，概述更改內容和任何相關上下文。\n- 拉取請求應該針對 `main` 分支，並包含對更改的清晰概述。",
 
     "bug_report_title": "Bug 報告和功能請求",
     "bug_report_intro": "如果你在 AlistHelper 中遇到 bug 或有功能請求，請在 [issue tracker](https://github.com/Xmarmalade/alisthelper/issues) 中提交 issue。請務必提供問題的清晰描述或功能請求，以及任何相關上下文或重現步驟。"
