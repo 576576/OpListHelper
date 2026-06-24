@@ -270,7 +270,6 @@ jobs:
           FLUTTER_VERSION: ${{ needs.prebuild.outputs.flutter_version }}
         run: |
           TEMPLATE="assets/templates/README.md"
-          VERSION="$APP_VERSION"
           FLUTTER_VER="$FLUTTER_VERSION"
 
           for DATA in assets/docs/*.json; do
@@ -305,88 +304,33 @@ jobs:
             ICON_PREFIX=""; [[ "$OUTPUT" != "README.md" ]] && ICON_PREFIX="../../"
             DOC_PREFIX="docs/"; [[ "$OUTPUT" != "README.md" ]] && DOC_PREFIX="../"
 
-            # Extract all fields
-            DESCRIPTION=$(jq -r '.description' "$DATA")
-            FEATURES=$(jq -r '.features' "$DATA")
-            SCREENSHOTS_TITLE=$(jq -r '.screenshots_title' "$DATA")
-            SCREENSHOTS=$(jq -r '.screenshots' "$DATA")
-            PLATFORM_NOTE=$(jq -r '.platform_note' "$DATA")
-            BINARIES_NOTE=$(jq -r '.binaries_note' "$DATA")
-            COMPARISON_INTRO=$(jq -r '.comparison_intro' "$DATA")
-            COL_PRICE=$(jq -r '.col_price' "$DATA")
-            COL_BOOT=$(jq -r '.col_boot' "$DATA")
-            COL_SILENT=$(jq -r '.col_silent' "$DATA")
-            COL_ACCOMPANIED=$(jq -r '.col_accompanied' "$DATA")
-            COL_GUI=$(jq -r '.col_gui' "$DATA")
-            COL_TRAY=$(jq -r '.col_tray' "$DATA")
-            COL_PARAMS=$(jq -r '.col_params' "$DATA")
-            COL_PROXY=$(jq -r '.col_proxy' "$DATA")
-            FREE=$(jq -r '.free' "$DATA")
-            NEEDS_CONFIG=$(jq -r '.needs_config' "$DATA")
-            SUPPORTED=$(jq -r '.supported' "$DATA")
-            NOT_SUPPORTED=$(jq -r '.not_supported' "$DATA")
-            GETTING_STARTED=$(jq -r '.getting_started' "$DATA")
-            CONTRIBUTING_TITLE=$(jq -r '.contributing_title' "$DATA")
-            CONTRIBUTING_INTRO=$(jq -r '.contributing_intro' "$DATA")
-            CONTRIBUTING_CODE_INTRO=$(jq -r '.contributing_code_intro' "$DATA")
-            RUN_TITLE=$(jq -r '.run_title' "$DATA")
-            RUN_INSTRUCTIONS=$(jq -r '.run_instructions' "$DATA")
-            T_TITLE=$(jq -r '.translation_title' "$DATA")
-            T_INTRO=$(jq -r '.translation_intro' "$DATA")
-            CG_TITLE=$(jq -r '.contributing_guidelines_title' "$DATA")
-            CG_ITEMS=$(jq -r '.contributing_guidelines_items' "$DATA")
-            BR_TITLE=$(jq -r '.bug_report_title' "$DATA")
-            BR_INTRO=$(jq -r '.bug_report_intro' "$DATA")
-
-            # Escape multiline content for sed (newlines → \n, special chars escaped)
-            sed_escape() { printf '%s' "$1" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's:[\/&]:\\&:g'; }
-            DESCRIPTION=$(sed_escape "$DESCRIPTION")
-            FEATURES=$(sed_escape "$FEATURES")
-            SCREENSHOTS=$(sed_escape "$SCREENSHOTS")
-            COMPARISON_INTRO=$(sed_escape "$COMPARISON_INTRO")
-            CONTRIBUTING_INTRO=$(sed_escape "$CONTRIBUTING_INTRO")
-            CONTRIBUTING_CODE_INTRO=$(sed_escape "$CONTRIBUTING_CODE_INTRO")
-            RUN_INSTRUCTIONS=$(sed_escape "$RUN_INSTRUCTIONS")
-            T_INTRO=$(sed_escape "$T_INTRO")
-            CG_ITEMS=$(sed_escape "$CG_ITEMS")
-            BR_INTRO=$(sed_escape "$BR_INTRO")
+            LANGS_ESC=$(echo "$LANGS_HTML" | sed 's/&/\\&/g')
 
             cp "$TEMPLATE" "$OUTPUT"
+            # Use Python for all JSON content replacements (handles multiline safely)
+            python3 -c "
+import json, re
+with open('$DATA', 'r') as f: d = json.load(f)
+with open('$OUTPUT', 'r') as f: t = f.read()
+def flatten(obj, prefix=''):
+    result = {}
+    for k, v in obj.items():
+        key = f'{prefix}.{k}' if prefix else k
+        if isinstance(v, dict):
+            result.update(flatten(v, key))
+        elif isinstance(v, list):
+            result[f'{{{{{key}}}}}'] = json.dumps(v)
+        else:
+            result[f'{{{{{key}}}}}'] = str(v)
+    return result
+for k, v in flatten(d).items():
+    t = t.replace(k, v)
+with open('$OUTPUT', 'w') as f: f.write(t)
+"
+            # Replace shell-provided placeholders via sed
             sed -i "s#{{icon_prefix}}#$ICON_PREFIX#" "$OUTPUT"
-            LANGS_ESC=$(echo "$LANGS_HTML" | sed 's/&/\\&/g')
             sed -i "s#{{languages}}#$LANGS_ESC#" "$OUTPUT"
             sed -i "s|{{flutter_version}}|$FLUTTER_VER|" "$OUTPUT"
-            sed -i "s|{{description}}|$DESCRIPTION|" "$OUTPUT"
-            sed -i "s|{{features}}|$FEATURES|" "$OUTPUT"
-            sed -i "s|{{screenshots_title}}|$SCREENSHOTS_TITLE|" "$OUTPUT"
-            sed -i "s|{{screenshots}}|$SCREENSHOTS|" "$OUTPUT"
-            sed -i "s|{{platform_note}}|$PLATFORM_NOTE|" "$OUTPUT"
-            sed -i "s|{{binaries_note}}|$BINARIES_NOTE|" "$OUTPUT"
-            sed -i "s|{{comparison_intro}}|$COMPARISON_INTRO|" "$OUTPUT"
-            sed -i "s|{{col_price}}|$COL_PRICE|" "$OUTPUT"
-            sed -i "s|{{col_boot}}|$COL_BOOT|" "$OUTPUT"
-            sed -i "s|{{col_silent}}|$COL_SILENT|" "$OUTPUT"
-            sed -i "s|{{col_accompanied}}|$COL_ACCOMPANIED|" "$OUTPUT"
-            sed -i "s|{{col_gui}}|$COL_GUI|" "$OUTPUT"
-            sed -i "s|{{col_tray}}|$COL_TRAY|" "$OUTPUT"
-            sed -i "s|{{col_params}}|$COL_PARAMS|" "$OUTPUT"
-            sed -i "s|{{col_proxy}}|$COL_PROXY|" "$OUTPUT"
-            sed -i "s|{{free}}|$FREE|g" "$OUTPUT"
-            sed -i "s|{{needs_config}}|$NEEDS_CONFIG|g" "$OUTPUT"
-            sed -i "s|{{supported}}|$SUPPORTED|g" "$OUTPUT"
-            sed -i "s|{{not_supported}}|$NOT_SUPPORTED|g" "$OUTPUT"
-            sed -i "s|{{getting_started}}|$GETTING_STARTED|" "$OUTPUT"
-            sed -i "s|{{contributing_title}}|$CONTRIBUTING_TITLE|" "$OUTPUT"
-            sed -i "s|{{contributing_intro}}|$CONTRIBUTING_INTRO|" "$OUTPUT"
-            sed -i "s|{{contributing_code_intro}}|$CONTRIBUTING_CODE_INTRO|" "$OUTPUT"
-            sed -i "s|{{run_title}}|$RUN_TITLE|" "$OUTPUT"
-            sed -i "s|{{run_instructions}}|$RUN_INSTRUCTIONS|" "$OUTPUT"
-            sed -i "s|{{translation_title}}|$T_TITLE|" "$OUTPUT"
-            sed -i "s|{{translation_intro}}|$T_INTRO|" "$OUTPUT"
-            sed -i "s|{{contributing_guidelines_title}}|$CG_TITLE|" "$OUTPUT"
-            sed -i "s|{{contributing_guidelines_items}}|$CG_ITEMS|" "$OUTPUT"
-            sed -i "s|{{bug_report_title}}|$BR_TITLE|" "$OUTPUT"
-            sed -i "s|{{bug_report_intro}}|$BR_INTRO|" "$OUTPUT"
             sed -i "s|](docs/|]($DOC_PREFIX|g" "$OUTPUT"
           done
 
