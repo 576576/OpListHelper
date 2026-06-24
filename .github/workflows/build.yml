@@ -60,7 +60,6 @@ jobs:
         env:
           MSG: ${{ github.event.head_commit.message || '' }}
         run: |
-          SHA=$(git rev-parse --short HEAD)
           CUR_VER=$(grep '^version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d+ -f1)
           echo "do_release=false" >> $GITHUB_OUTPUT
 
@@ -198,21 +197,8 @@ jobs:
           echo "templates_hash=$TEMPLATES_HASH" >> $GITHUB_OUTPUT
           echo "i18n: $DO_I18N  docs: $DO_DOCS"
 
-  # ── i18n & Docs ──
-  i18n:
-    needs: prebuild
-    if: always() && !failure() && !cancelled() && (needs.prebuild.outputs.i18n_do == 'true' || needs.prebuild.outputs.docs_do == 'true')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      i18n_changed: ${{ needs.prebuild.outputs.i18n_do }}
-      docs_changed: ${{ needs.prebuild.outputs.docs_do }}
-    steps:
-      - uses: actions/checkout@v4
-
       - name: Generate i18n status
-        if: needs.prebuild.outputs.i18n_do == 'true'
+        if: steps.hash-check.outputs.do_i18n == 'true'
         run: |
           TEMPLATE="assets/templates/i18n.md"
           OUTPUT="docs/i18n.md"
@@ -253,21 +239,20 @@ jobs:
           cp "$TEMPLATE" "$OUTPUT"
           sed -i "s#{{date}}#$NOW#" "$OUTPUT"
           sed -i "s#{{rows}}#$ROWS#" "$OUTPUT"
-          sed -i "s#{{bundles_hash}}#${{ needs.prebuild.outputs.bundles_hash }}#" "$OUTPUT"
-          sed -i "s#{{docs_hash}}#${{ needs.prebuild.outputs.docs_hash }}#" "$OUTPUT"
-          sed -i "s#{{templates_hash}}#${{ needs.prebuild.outputs.templates_hash }}#" "$OUTPUT"
+          sed -i "s#{{bundles_hash}}#${{ steps.hash-check.outputs.bundles_hash }}#" "$OUTPUT"
+          sed -i "s#{{docs_hash}}#${{ steps.hash-check.outputs.docs_hash }}#" "$OUTPUT"
+          sed -i "s#{{templates_hash}}#${{ steps.hash-check.outputs.templates_hash }}#" "$OUTPUT"
 
       - uses: actions/upload-artifact@v4
-        if: needs.prebuild.outputs.i18n_do == 'true'
+        if: steps.hash-check.outputs.do_i18n == 'true'
         with:
           name: i18n-md
           path: docs/i18n.md
 
       - name: Generate READMEs
-        if: needs.prebuild.outputs.docs_do == 'true'
+        if: steps.hash-check.outputs.do_docs == 'true'
         env:
-          APP_VERSION: ${{ needs.prebuild.outputs.app_version }}
-          FLUTTER_VERSION: ${{ needs.prebuild.outputs.flutter_version }}
+          FLUTTER_VERSION: ${{ steps.flutter-ver.outputs.version }}
         run: |
           TEMPLATE="assets/templates/README.md"
           FLUTTER_VER="$FLUTTER_VERSION"
@@ -279,13 +264,11 @@ jobs:
             fi
             echo "Generating $OUTPUT from $DATA"
 
-            # Build language switcher
             LANGS_HTML=""
             for doc in $(ls assets/docs/*.json | sort -r); do
               code=$(basename "$doc" .json)
               label=$(jq -r '.lang' "$doc")
               region=$(jq -r '.langRegion' "$doc")
-              base=$(echo "$code" | cut -d- -f1)
               other_count=$(jq -r '.lang' assets/docs/*.json | grep -cFx "$label" || echo 0)
               if [ "$other_count" -gt 1 ]; then
                 label="$label ($region)"
@@ -307,35 +290,96 @@ jobs:
             LANGS_ESC=$(echo "$LANGS_HTML" | sed 's/&/\\&/g')
 
             cp "$TEMPLATE" "$OUTPUT"
-            # Use Python for all JSON content replacements (handles multiline safely)
-            python3 -c "
-import json, re
-with open('$DATA', 'r') as f: d = json.load(f)
-with open('$OUTPUT', 'r') as f: t = f.read()
-def flatten(obj, prefix=''):
-    result = {}
-    for k, v in obj.items():
-        key = f'{prefix}.{k}' if prefix else k
-        if isinstance(v, dict):
-            result.update(flatten(v, key))
-        elif isinstance(v, list):
-            result[f'{{{{{key}}}}}'] = json.dumps(v)
-        else:
-            result[f'{{{{{key}}}}}'] = str(v)
-    return result
-for k, v in flatten(d).items():
-    t = t.replace(k, v)
-with open('$OUTPUT', 'w') as f: f.write(t)
-"
-            # Replace shell-provided placeholders via sed
+            # Extract all fields from docs JSON
+            DESCRIPTION=$(jq -r '.description' "$DATA")
+            SCREENSHOTS_TITLE=$(jq -r '.screenshots_title' "$DATA")
+            SCREENSHOTS=$(jq -r '.screenshots' "$DATA")
+            FEATURES=$(jq -r '.features' "$DATA")
+            PLATFORM_NOTE=$(jq -r '.platform_note' "$DATA")
+            BINARIES_NOTE=$(jq -r '.binaries_note' "$DATA")
+            COMPARISON_INTRO=$(jq -r '.comparison_intro' "$DATA")
+            COL_PRICE=$(jq -r '.col_price' "$DATA")
+            COL_BOOT=$(jq -r '.col_boot' "$DATA")
+            COL_SILENT=$(jq -r '.col_silent' "$DATA")
+            COL_ACCOMPANIED=$(jq -r '.col_accompanied' "$DATA")
+            COL_GUI=$(jq -r '.col_gui' "$DATA")
+            COL_TRAY=$(jq -r '.col_tray' "$DATA")
+            COL_PARAMS=$(jq -r '.col_params' "$DATA")
+            COL_PROXY=$(jq -r '.col_proxy' "$DATA")
+            FREE=$(jq -r '.free' "$DATA")
+            NEEDS_CONFIG=$(jq -r '.needs_config' "$DATA")
+            SUPPORTED=$(jq -r '.supported' "$DATA")
+            NOT_SUPPORTED=$(jq -r '.not_supported' "$DATA")
+            GETTING_STARTED=$(jq -r '.getting_started' "$DATA")
+            CONTRIBUTING_TITLE=$(jq -r '.contributing_title' "$DATA")
+            CONTRIBUTING_INTRO=$(jq -r '.contributing_intro' "$DATA")
+            CONTRIBUTING_CODE_INTRO=$(jq -r '.contributing_code_intro' "$DATA")
+            RUN_TITLE=$(jq -r '.run_title' "$DATA")
+            RUN_INSTRUCTIONS=$(jq -r '.run_instructions' "$DATA")
+            TRANSLATION_TITLE=$(jq -r '.translation_title' "$DATA")
+            TRANSLATION_INTRO=$(jq -r '.translation_intro' "$DATA")
+            CG_TITLE=$(jq -r '.contributing_guidelines_title' "$DATA")
+            CG_ITEMS=$(jq -r '.contributing_guidelines_items' "$DATA")
+            BR_TITLE=$(jq -r '.bug_report_title' "$DATA")
+            BR_INTRO=$(jq -r '.bug_report_intro' "$DATA")
+
+            # Escape for sed: newlines → \n, escape /&|\
+            sed_escape() {
+              printf '%s' "$1" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's:[\/&|\\]:\\&:g'
+            }
+            DESCRIPTION=$(sed_escape "$DESCRIPTION")
+            SCREENSHOTS=$(sed_escape "$SCREENSHOTS")
+            FEATURES=$(sed_escape "$FEATURES")
+            COMPARISON_INTRO=$(sed_escape "$COMPARISON_INTRO")
+            CONTRIBUTING_INTRO=$(sed_escape "$CONTRIBUTING_INTRO")
+            CONTRIBUTING_CODE_INTRO=$(sed_escape "$CONTRIBUTING_CODE_INTRO")
+            RUN_INSTRUCTIONS=$(sed_escape "$RUN_INSTRUCTIONS")
+            TRANSLATION_INTRO=$(sed_escape "$TRANSLATION_INTRO")
+            CG_ITEMS=$(sed_escape "$CG_ITEMS")
+            BR_INTRO=$(sed_escape "$BR_INTRO")
+
+            # Replace all placeholders via sed
+            sed -i "s|{{description}}|$DESCRIPTION|" "$OUTPUT"
+            sed -i "s|{{screenshots_title}}|$SCREENSHOTS_TITLE|" "$OUTPUT"
+            sed -i "s|{{screenshots}}|$SCREENSHOTS|" "$OUTPUT"
+            sed -i "s|{{features}}|$FEATURES|" "$OUTPUT"
+            sed -i "s|{{platform_note}}|$PLATFORM_NOTE|" "$OUTPUT"
+            sed -i "s|{{binaries_note}}|$BINARIES_NOTE|" "$OUTPUT"
+            sed -i "s|{{comparison_intro}}|$COMPARISON_INTRO|" "$OUTPUT"
+            sed -i "s|{{col_price}}|$COL_PRICE|" "$OUTPUT"
+            sed -i "s|{{col_boot}}|$COL_BOOT|" "$OUTPUT"
+            sed -i "s|{{col_silent}}|$COL_SILENT|" "$OUTPUT"
+            sed -i "s|{{col_accompanied}}|$COL_ACCOMPANIED|" "$OUTPUT"
+            sed -i "s|{{col_gui}}|$COL_GUI|" "$OUTPUT"
+            sed -i "s|{{col_tray}}|$COL_TRAY|" "$OUTPUT"
+            sed -i "s|{{col_params}}|$COL_PARAMS|" "$OUTPUT"
+            sed -i "s|{{col_proxy}}|$COL_PROXY|" "$OUTPUT"
+            sed -i "s|{{free}}|$FREE|g" "$OUTPUT"
+            sed -i "s|{{needs_config}}|$NEEDS_CONFIG|g" "$OUTPUT"
+            sed -i "s|{{supported}}|$SUPPORTED|g" "$OUTPUT"
+            sed -i "s|{{not_supported}}|$NOT_SUPPORTED|g" "$OUTPUT"
+            sed -i "s|{{getting_started}}|$GETTING_STARTED|" "$OUTPUT"
+            sed -i "s|{{contributing_title}}|$CONTRIBUTING_TITLE|" "$OUTPUT"
+            sed -i "s|{{contributing_intro}}|$CONTRIBUTING_INTRO|" "$OUTPUT"
+            sed -i "s|{{contributing_code_intro}}|$CONTRIBUTING_CODE_INTRO|" "$OUTPUT"
+            sed -i "s|{{run_title}}|$RUN_TITLE|" "$OUTPUT"
+            sed -i "s|{{run_instructions}}|$RUN_INSTRUCTIONS|" "$OUTPUT"
+            sed -i "s|{{translation_title}}|$TRANSLATION_TITLE|" "$OUTPUT"
+            sed -i "s|{{translation_intro}}|$TRANSLATION_INTRO|" "$OUTPUT"
+            sed -i "s|{{contributing_guidelines_title}}|$CG_TITLE|" "$OUTPUT"
+            sed -i "s|{{contributing_guidelines_items}}|$CG_ITEMS|" "$OUTPUT"
+            sed -i "s|{{bug_report_title}}|$BR_TITLE|" "$OUTPUT"
+            sed -i "s|{{bug_report_intro}}|$BR_INTRO|" "$OUTPUT"
+            # Shell-provided placeholders
             sed -i "s#{{icon_prefix}}#$ICON_PREFIX#" "$OUTPUT"
+            LANGS_ESC=$(echo "$LANGS_HTML" | sed 's/&/\\&/g')
             sed -i "s#{{languages}}#$LANGS_ESC#" "$OUTPUT"
             sed -i "s|{{flutter_version}}|$FLUTTER_VER|" "$OUTPUT"
             sed -i "s|](docs/|]($DOC_PREFIX|g" "$OUTPUT"
           done
 
       - uses: actions/upload-artifact@v4
-        if: needs.prebuild.outputs.docs_do == 'true'
+        if: steps.hash-check.outputs.do_docs == 'true'
         with:
           name: readme-md
           path: |
@@ -344,7 +388,7 @@ with open('$OUTPUT', 'w') as f: f.write(t)
 
   # ── Commit ──
   commit:
-    needs: [prebuild, i18n]
+    needs: [prebuild]
     if: always() && !cancelled() && !failure()
     runs-on: ubuntu-latest
     permissions:
@@ -372,22 +416,6 @@ with open('$OUTPUT', 'w') as f: f.write(t)
           name: readme-md
           path: .
 
-      - name: Build commit message
-        id: msg
-        run: |
-          LINES=""
-          if [ -n "${{ needs.prebuild.outputs.new_build }}" ]; then
-            LINES="${LINES}- Update build number ${{ needs.prebuild.outputs.new_build }}.\n"
-          fi
-          if [ "${{ needs.prebuild.outputs.i18n_do }}" == "true" ]; then
-            LINES="${LINES}- Update i18n.\n"
-          fi
-          if [ "${{ needs.prebuild.outputs.docs_do }}" == "true" ]; then
-            LINES="${LINES}- Update documents.\n"
-          fi
-          MSG="Auto commit by Github Actions\n${LINES}"
-          echo "message=$MSG" >> $GITHUB_OUTPUT
-
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
@@ -397,7 +425,13 @@ with open('$OUTPUT', 'w') as f: f.write(t)
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "$(echo -e '${{ steps.msg.outputs.message }}')\n\n[skip ci]"
+          MSG="Auto commit"
+          [ -n "${{ needs.prebuild.outputs.new_build }}" ] && MSG="$MSG: build ${{ needs.prebuild.outputs.new_build }}"
+          [ "${{ needs.prebuild.outputs.i18n_do }}" == "true" ] && MSG="$MSG · i18n"
+          [ "${{ needs.prebuild.outputs.docs_do }}" == "true" ] && MSG="$MSG · docs"
+          git commit -m "$MSG
+
+[skip ci]"
           git pull --rebase origin "$GITHUB_REF_NAME" || true
           git push
 
@@ -462,6 +496,9 @@ with open('$OUTPUT', 'w') as f: f.write(t)
         run: |
           cp windows/scripts/innosetup.iss build/windows/x64/runner/
           cp assets/images/icon.ico build/windows/x64/runner/alisthelper.ico
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
 
       - name: Build installer
         working-directory: build/windows/x64/runner/
@@ -651,7 +688,7 @@ with open('$OUTPUT', 'w') as f: f.write(t)
           LINUX_CELL=""
           for f in artifacts/AlistHelper-*; do
             fname=$(basename "$f")
-            URL="https://github.com/\${{ github.repository }}/releases/download/nightly/$fname"
+            URL="https://github.com/${{ github.repository }}/releases/download/nightly/$fname"
             case "$fname" in
               *windows*) WIN_CELL="$WIN_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-blue.svg?logo=windows\"></a><br>" ;;
               *macos*)   MACOS_CELL="$MACOS_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-silver.svg?logo=apple\"></a><br>" ;;
@@ -706,6 +743,7 @@ with open('$OUTPUT', 'w') as f: f.write(t)
       needs.prebuild.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
       needs.build-macos.result != 'failure' &&
+      needs.build-linux.result != 'failure' &&
       (startsWith(github.ref, 'refs/tags/v') ||
        needs.prebuild.outputs.do_release == 'true')
     runs-on: ubuntu-latest
@@ -760,7 +798,7 @@ with open('$OUTPUT', 'w') as f: f.write(t)
           for f in artifacts/AlistHelper-*; do
             [ -f "$f" ] || continue
             fname=$(basename "$f")
-            URL="https://github.com/\${{ github.repository }}/releases/download/\${{ steps.version.outputs.tag }}/$fname"
+              URL="https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/$fname"
             case "$fname" in
               *windows*) WIN_CELL="$WIN_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-blue.svg?logo=windows\"></a><br>" ;;
               *macos*)   MACOS_CELL="$MACOS_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-silver.svg?logo=apple\"></a><br>" ;;
