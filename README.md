@@ -1,37 +1,27 @@
-# alisthelper
+# Alist Helper
 
 <p align="center">
-  <img src="https://github.com/Xmarmalade/alisthelper/assets/16839488/2067509c-756e-48cd-8f20-5ea961f46ef7" width="100" height="100">
+  <img src="assets/images/icon.png" width="100" height="100">
 </p>
 
-English | [简体中文](./README_zh-Hans.md) |  [CODE_OF_CONDUCT](./CODE_OF_CONDUCT.md)
+<a href="docs/zh/README.md">中文 (简体)</a> &nbsp;|&nbsp; <a href="docs/zh-Hant/README.md">中文 (繁體)</a> &nbsp;|&nbsp; English
 
-![](https://img.shields.io/badge/language-dart-blue.svg?style=for-the-badge&color=00ACC1)
-![Downloads](https://img.shields.io/badge/flutter-00B0FF?style=for-the-badge&logo=flutter)
-[![](https://img.shields.io/github/downloads/Xmarmalade/alisthelper/total?style=for-the-badge&color=FF2196)](https://github.com/Xmarmalade/alisthelper/releases)
-[![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/Xmarmalade/alisthelper?include_prereleases&style=for-the-badge)](https://github.com/Xmarmalade/alisthelper/releases/latest)
-[![](https://img.shields.io/github/license/Xmarmalade/alisthelper?style=for-the-badge)](./LICENSE)
-![](https://img.shields.io/github/stars/Xmarmalade/alisthelper?style=for-the-badge)
-![](https://img.shields.io/github/issues/Xmarmalade/alisthelper?style=for-the-badge&color=9C27B0)
+<p align="center">
+  <img src="https://img.shields.io/badge/language-dart-blue.svg?style=for-the-badge&color=00ACC1">
+  <img src="https://img.shields.io/badge/flutter-3.44.3-00B0FF?style=for-the-badge&logo=flutter">
+  <img src="https://img.shields.io/github/downloads/Xmarmalade/alisthelper/total?style=for-the-badge&color=FF2196">
+  <img src="https://img.shields.io/github/v/release/Xmarmalade/alisthelper?include_prereleases&style=for-the-badge">
+  <img src="https://img.shields.io/github/license/Xmarmalade/alisthelper?style=for-the-badge">
+  <img src="https://img.shields.io/github/stars/Xmarmalade/alisthelper?style=for-the-badge">
+  <img src="https://img.shields.io/github/issues/Xmarmalade/alisthelper?style=for-the-badge&color=9C27B0">
+</p>
 
-Alist Helper is an application developed using Flutter, designed to simplify the use of the desktop version of alist/openlist. It can manage alist/openlist, allowing you to easily start and stop the alist/openlist program.
-
-Wait, not only alist/openlist, alisthelper also supports rclone management, mounting alist/openlist as a hard drive for use.
+Alist Helper is an application developed using Flutter, designed to simplify the use of the desktop version of alist/openlist. It can manage alist/openlist, allowing you to easily start and stop the alist/openlist program.\n\nWait, not only alist/openlist, alisthelper also supports rclone management, mounting alist/openlist as a hard drive for use.
 
 ### Screenshots
-| ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/5b77df3a-8b07-40e4-adc5-9f0907f6a3f9) | ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/5a85db81-de92-4362-8c01-73e89482dcb7) |
-| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/0f28c3a0-aac5-40ac-87e1-e53ae597a738) | ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/e1b23c3c-cc62-4df8-8406-da41f798416e) |
+| ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/5b77df3a-8b07-40e4-adc5-9f0907f6a3f9) | ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/5a85db81-de92-4362-8c01-73e89482dcb7) |\n| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |\n| ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/0f28c3a0-aac5-40ac-87e1-e53ae597a738) | ![image](https://github.com/Xmarmalade/alisthelper/assets/16839488/e1b23c3c-cc62-4df8-8406-da41f798416e) |
 
-Alist Helper includes several useful features:
-
-- Automatic launching of alist/openlist
-- Minimizing to the system tray
-- Automatic startup on boot, with the option for silent startup
-- Quick access to alist/openlist version and administrator information
-- Adjustable alist/openlist startup parameters. You can customize the startup parameters to meet your specific needs and preferences.
-
-Free. No tracking. No ads.
+Alist Helper includes several useful features:\n\n- Automatic launching of alist/openlist\n- Minimizing to the system tray\n- Automatic startup on boot, with the option for silent startup\n- Quick access to alist/openlist version and administrator information\n- Adjustable alist/openlist startup parameters. You can customize the startup parameters to meet your specific needs and preferences.\n\nFree. No tracking. No ads.
 
 Currently, this app is available on Windows and macOS. (You can build it for Linux, but no official support yet.)
 
@@ -41,17 +31,17 @@ Here's a comparison of alisthelper and other solutions.
 
 |                     | alist                        | alisthelper | alist desktop   |
 | ------------------- | ---------------------------- | ----------- | --------------- |
-| Price               | 🆓 Free                       | 🆓 Free      | 💰8$/50￥         |
-| Startup at boot     | 🛠️ Needs manual configuration | ✅ Supported | ✅ Supported     |
-| Silent startup      | ❌ Not supported              | ✅ Supported | ✅ Supported     |
-| Accompanied startup | ❌ Not supported              | ✅ Supported | ✅ Supported     |
-| GUI                 | ❌ Not supported              | ✅ Supported | ✅ Supported     |
-| System tray         | ❌ Not supported              | ✅ Supported | ✅ Supported     |
-| Startup parameters  | 🛠️ Needs manual configuration | ✅ Supported | ❌ Not supported |
-| Http proxy          | 🛠️ Needs manual configuration | ✅ Supported | ❌ Not supported |
+| Price       | 🆓 Free                       | 🆓 Free      | 💰8$/50￥         |
+| Startup at boot        | 🛠️ Needs manual configuration            | ✅ Supported | ✅ Supported     |
+| Silent startup      | ❌ Not supported           | ✅ Supported | ✅ Supported     |
+| Accompanied startup | ❌ Not supported           | ✅ Supported | ✅ Supported     |
+| GUI         | ❌ Not supported           | ✅ Supported | ✅ Supported     |
+| System tray        | ❌ Not supported           | ✅ Supported | ✅ Supported     |
+| Startup parameters      | 🛠️ Needs manual configuration            | ✅ Supported | ❌ Not supported |
+| Http proxy       | 🛠️ Needs manual configuration            | ✅ Supported | ❌ Not supported |
 
 ### Getting Started
-[Wiki (Simplified Chinese language)](https://github.com/Xmarmalade/alisthelper/wiki)
+[Wiki](https://github.com/Xmarmalade/alisthelper/wiki)
 
 ## Contributing to AlistHelper
 
@@ -63,9 +53,7 @@ If you're interested in contributing code to AlistHelper, you'll need to follow 
 
 ### Run
 
-Fork the repository and install [Flutter](https://flutter.dev).
-
-After you have installed [Flutter](https://flutter.dev), then you can start this app by typing the following commands:
+Fork the repository and install [Flutter](https://flutter.dev).\n\nAfter you have installed [Flutter](https://flutter.dev), then you can start this app by typing the following commands:
 
 ```shell
 flutter pub get
@@ -75,29 +63,11 @@ flutter run
 
 ### Translation
 
-You can help translating this app to other languages!
-
-1. Fork this repository
-2. Choose one
-   - Add missing translations in existing languages: Only update `_missing_translations_<locale>.json` in [lib/i18n](https://github.com/Xmarmalade/alisthelper/tree/master/lib/i18n)
-   - Fix existing translations: Update `strings_<locale>.i18n.json` in [lib/i18n](https://github.com/Xmarmalade/alisthelper/tree/master/lib/i18n)
-   - Add new languages: Create a new file, see also: [locale codes](https://saimana.com/list-of-country-locale-code/).
-3. Optional: Re-run this app
-   1. Make sure you have [run](#run) this app once.
-   2. Update translations via `dart run build_runner build`
-   3. Run app via `flutter run`
-4. Open a pull request
-
-#### _Take note:_ Fields decorated with `@` are not meant to be translated, they are not used in the app in any way, being merely informative text about the file or to give context to the translator.
+See [docs/i18n.md](docs/i18n.md) for language status and contribution guide.
 
 ### Contributing Guidelines
 
-Before you submit a pull request to AlistHelper, please ensure that you have followed these guidelines:
-
-- Code should be well-documented and formatted according to the [Dart Style Guide](https://dart.dev/guides/language/effective-dart/style).
-- All changes should be covered by tests.
-- Commits should be well-written and descriptive, with a clear summary of the changes made and any relevant context.
-- Pull requests should target the `master` branch and include a clear summary of the changes made.
+Before you submit a pull request to AlistHelper, please ensure that you have followed these guidelines:\n\n- Code should be well-documented and formatted according to the [Dart Style Guide](https://dart.dev/guides/language/effective-dart/style).\n- All changes should be covered by tests.\n- Commits should be well-written and descriptive, with a clear summary of the changes made and any relevant context.\n- Pull requests should target the `main` branch and include a clear summary of the changes made.
 
 ### Bug Reports and Feature Requests
 
