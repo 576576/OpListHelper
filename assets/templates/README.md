@@ -1,4 +1,4 @@
-# alisthelper
+# OpList Helper
 
 <p align="center">
   <img src="{{icon_prefix}}assets/images/icon.png" width="100" height="100">
