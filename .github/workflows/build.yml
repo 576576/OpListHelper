@@ -338,6 +338,19 @@ jobs:
             BR_TITLE=$(jq -r '.bug_report_title' "$DATA")
             BR_INTRO=$(jq -r '.bug_report_intro' "$DATA")
 
+            # Escape multiline content for sed (newlines → \n, special chars escaped)
+            sed_escape() { printf '%s' "$1" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's:[\/&]:\\&:g'; }
+            DESCRIPTION=$(sed_escape "$DESCRIPTION")
+            FEATURES=$(sed_escape "$FEATURES")
+            SCREENSHOTS=$(sed_escape "$SCREENSHOTS")
+            COMPARISON_INTRO=$(sed_escape "$COMPARISON_INTRO")
+            CONTRIBUTING_INTRO=$(sed_escape "$CONTRIBUTING_INTRO")
+            CONTRIBUTING_CODE_INTRO=$(sed_escape "$CONTRIBUTING_CODE_INTRO")
+            RUN_INSTRUCTIONS=$(sed_escape "$RUN_INSTRUCTIONS")
+            T_INTRO=$(sed_escape "$T_INTRO")
+            CG_ITEMS=$(sed_escape "$CG_ITEMS")
+            BR_INTRO=$(sed_escape "$BR_INTRO")
+
             cp "$TEMPLATE" "$OUTPUT"
             sed -i "s#{{icon_prefix}}#$ICON_PREFIX#" "$OUTPUT"
             LANGS_ESC=$(echo "$LANGS_HTML" | sed 's/&/\\&/g')
