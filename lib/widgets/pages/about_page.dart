@@ -33,7 +33,7 @@ class AboutPage extends StatelessWidget {
           Column(
             children: [
               const SizedBox(height: 20),
-              Image.asset('assets/alisthelper.png', height: 180, width: 180),
+              Image.asset('assets/images/icon.png', height: 180, width: 180),
               const SizedBox(height: 20),
               const Text('Alist Helper',
                   style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
@@ -73,7 +73,7 @@ class AboutPage extends StatelessWidget {
                         MaterialPageRoute(
                             builder: (context) => LicensePage(
                                   applicationIcon: Image.asset(
-                                      'assets/alisthelper.png',
+                                      'assets/images/icon.png',
                                       height: 100,
                                       width: 100),
                                 )));

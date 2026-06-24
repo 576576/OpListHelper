@@ -66,6 +66,9 @@ unlinked_spec.ds
 *.gen.dart
 *.freezed.dart
 
+# I18n — copied from assets/bundles/ for code generation
+lib/i18n/*.i18n.json
+
 # Android related
 **/android/**/gradle-wrapper.jar
 .gradle/

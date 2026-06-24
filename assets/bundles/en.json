@@ -1,5 +1,8 @@
 {
-    "locale": "English",
+    "lang": "English",
+    "langCode": "en",
+    "langRegion": "United States",
+    "langRegionCode": ["US", "GB"],
     "alistOperation": {
         "startAlist": "Start",
         "endAlist": "End",
@@ -19,7 +22,7 @@
             "description": "Create a remote disk, if you don't understand the options here, please seek help.",
             "name": "Name",
             "nameHint": "Name of the disk",
-            "path": "Path", 
+            "path": "Path",
             "pathHint": "Path after the dav/ ",
             "mountPoint": "Mount Point",
             "mountPointHint": "Mount point of the disk on your system",
@@ -69,7 +72,7 @@
         "open": "Open",
         "hide": "Hide",
         "quit": "Quit",
-        "openGUI":"Open Web GUI",
+        "openGUI": "Open Web GUI",
         "startAlist": "Start Alist",
         "endAlist": "End Alist",
         "tooltip": "Alist Helper",

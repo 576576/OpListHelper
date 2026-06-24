@@ -1,5 +1,8 @@
 {
-    "locale": "正體中文",
+    "lang": "中文",
+    "langCode": "zh",
+    "langRegion": "繁體",
+    "langRegionCode": ["Hant", "TW", "HK", "MO"],
     "alistOperation": {
         "startAlist": "啟動",
         "endAlist": "關閉",
@@ -62,8 +65,8 @@
         "save": "儲存",
         "upgrade": "升級",
         "add": "新增",
-        "docs": "文档",
-        "sponsor": "赞助"
+        "docs": "文檔",
+        "sponsor": "贊助"
     },
     "tray": {
         "open": "開啟",

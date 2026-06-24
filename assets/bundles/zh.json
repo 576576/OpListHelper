@@ -1,5 +1,8 @@
 {
-    "locale": "简体中文",
+    "lang": "中文",
+    "langCode": "zh",
+    "langRegion": "简体",
+    "langRegionCode": ["Hans", "CN", "SG"],
     "alistOperation": {
         "startAlist": "启动",
         "endAlist": "关闭",
@@ -19,7 +22,7 @@
             "description": "创建一个远程磁盘，如果您不理解这里的选项，请寻求帮助。",
             "name": "名称",
             "nameHint": "磁盘的名称",
-            "path": "路径", 
+            "path": "路径",
             "pathHint": "dav/ 后的路径",
             "mountPoint": "挂载点",
             "mountPointHint": "系统中磁盘的挂载点",

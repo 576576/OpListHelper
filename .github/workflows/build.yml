@@ -1,0 +1,832 @@
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Prebuild: platform detection + version sync + i18n hash check ──
+  prebuild:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      windows: ${{ steps.platform.outputs.windows }}
+      macos: ${{ steps.platform.outputs.macos }}
+      linux: ${{ steps.platform.outputs.linux }}
+      is_tag: ${{ steps.branch.outputs.is_tag }}
+      do_release: ${{ steps.ver.outputs.do_release }}
+      release_version: ${{ steps.ver.outputs.release_version }}
+      release_tag: ${{ steps.ver.outputs.release_tag }}
+      release_name: ${{ steps.ver.outputs.release_name }}
+      nightly_date: ${{ steps.ver.outputs.nightly_date }}
+      synced_version: ${{ steps.ver.outputs.synced_version }}
+      new_build: ${{ steps.ver.outputs.new_build }}
+      app_version: ${{ steps.app-ver.outputs.version }}
+      flutter_version: ${{ steps.flutter-ver.outputs.version }}
+      skip_all: ${{ steps.platform.outputs.skip_all }}
+      i18n_do: ${{ steps.hash-check.outputs.do_i18n }}
+      docs_do: ${{ steps.hash-check.outputs.do_docs }}
+      bundles_hash: ${{ steps.hash-check.outputs.bundles_hash }}
+      docs_hash: ${{ steps.hash-check.outputs.docs_hash }}
+      templates_hash: ${{ steps.hash-check.outputs.templates_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Determine branch
+        id: branch
+        run: |
+          REF="${{ github.ref }}"
+          if [[ "$REF" == refs/tags/* ]]; then
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+          elif [[ "$REF" == refs/heads/main ]] || [[ "$REF" == refs/heads/master ]]; then
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          else
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync version & detect release
+        id: ver
+        if: steps.branch.outputs.is_tag == 'false'
+        env:
+          MSG: ${{ github.event.head_commit.message || '' }}
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          CUR_VER=$(grep '^version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d+ -f1)
+          echo "do_release=false" >> $GITHUB_OUTPUT
+
+          if echo "$MSG" | grep -qE '^(r|release|beta)-[0-9]+\.[0-9]+\.[0-9]+'; then
+            # ── Release / Beta ──
+            PREFIX=$(echo "$MSG" | grep -oE '^(r|release|beta)' | head -1)
+            VER=$(echo "$MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            CUR_BUILD=$(grep '^version:' pubspec.yaml | head -1 | awk '{print $2}' | grep -oE '\+[0-9]+$' | tr -d '+')
+            CUR_BUILD=${CUR_BUILD:-0}
+            NEW_BUILD=$((CUR_BUILD + 1))
+            NEW_VERSION_BASE="$VER"
+            NEW_VERSION="${NEW_VERSION_BASE}+${NEW_BUILD}"
+            case "$PREFIX" in
+              beta)
+                TAG="v$VER-beta"
+                REL_NAME="Beta $VER"
+                ;;
+              *)
+                TAG="v$VER"
+                REL_NAME="Release $VER"
+                ;;
+            esac
+            echo "Syncing release version: $NEW_VERSION (build $CUR_BUILD → $NEW_BUILD)"
+            echo "do_release=true" >> $GITHUB_OUTPUT
+            echo "release_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+            echo "release_name=$REL_NAME" >> $GITHUB_OUTPUT
+            echo "synced_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "new_build=$NEW_BUILD" >> $GITHUB_OUTPUT
+          else
+            # ── Non-release: increment build number only if a build will run ──
+            if ! echo "$MSG" | grep -qE '\b(b-win|b-macos|b-linux|b-all)\b'; then
+              echo "No build trigger in commit message, skip version sync"
+              echo "nightly_date=$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+              echo "synced_version=${CUR_VER}" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            BASE=$(echo "$CUR_VER" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+            if [ -z "$BASE" ]; then BASE="$CUR_VER"; fi
+            CUR_BUILD=$(grep '^version:' pubspec.yaml | head -1 | awk '{print $2}' | grep -oE '\+[0-9]+$' | tr -d '+')
+            CUR_BUILD=${CUR_BUILD:-0}
+            NEW_BUILD=$((CUR_BUILD + 1))
+            NEW_VERSION="${BASE}+${NEW_BUILD}"
+            NIGHTLY_DATE=$(date +%Y%m%d)
+            echo "Syncing dev version: $NEW_VERSION (build $CUR_BUILD → $NEW_BUILD)"
+            echo "nightly_date=$NIGHTLY_DATE" >> $GITHUB_OUTPUT
+            echo "synced_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "new_build=$NEW_BUILD" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Detect Flutter version
+        id: flutter-ver
+        run: |
+          VER=$(curl -sL https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json | jq -r '.releases[] | select(.channel=="stable") | .version' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "version=${VER:-unknown}" >> $GITHUB_OUTPUT
+
+      - name: Detect app version
+        id: app-ver
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d+ -f1)
+          echo "version=${VER}" >> $GITHUB_OUTPUT
+
+      - name: Determine platforms
+        id: platform
+        env:
+          MSG: ${{ github.event.head_commit.message || '' }}
+          IS_TAG: ${{ steps.branch.outputs.is_tag }}
+        run: |
+          W='false'; M='false'; L='false'
+          # b-none: skip all builds and tests
+          if echo "$MSG" | grep -qE '\bb-none\b'; then
+            echo "skip_all=true" >> $GITHUB_OUTPUT
+            echo "windows=false" >> $GITHUB_OUTPUT
+            echo "macos=false" >> $GITHUB_OUTPUT
+            echo "linux=false" >> $GITHUB_OUTPUT
+            echo "Platforms → b-none: skip all"
+            exit 0
+          fi
+          echo "skip_all=false" >> $GITHUB_OUTPUT
+          if [ "$IS_TAG" = "true" ]; then
+            W='true'; M='true'; L='true'
+          else
+            case "$MSG" in
+              *b-win*)   W='true' ;;
+              *b-macos*) M='true' ;;
+              *b-linux*) L='true' ;;
+              *b-all*)   W='true'; M='true'; L='true' ;;
+            esac
+          fi
+          echo "windows=$W" >> $GITHUB_OUTPUT
+          echo "macos=$M" >> $GITHUB_OUTPUT
+          echo "linux=$L" >> $GITHUB_OUTPUT
+          echo "Platforms → windows:$W macos:$M linux:$L"
+
+      - name: Check i18n & docs changes
+        id: hash-check
+        env:
+          MSG: ${{ github.event.head_commit.message || '' }}
+        run: |
+          # Use short hashes (first 8 chars of SHA256)
+          BUNDLES_HASH=$(find assets/bundles -type f -name '*.json' -exec sha256sum {} \; | sort | sha256sum | cut -c1-8)
+          DOCS_HASH=$(find assets/docs -type f -name '*.json' -exec sha256sum {} \; | sort | sha256sum | cut -c1-8)
+          TEMPLATES_HASH=$(find assets/templates -type f -exec sha256sum {} \; | sort | sha256sum | cut -c1-8)
+
+          # b-doc: force i18n + docs regeneration
+          if echo "$MSG" | grep -qE '\bb-doc\b'; then
+            echo "do_i18n=true" >> $GITHUB_OUTPUT
+            echo "do_docs=true" >> $GITHUB_OUTPUT
+            echo "bundles_hash=$BUNDLES_HASH" >> $GITHUB_OUTPUT
+            echo "docs_hash=$DOCS_HASH" >> $GITHUB_OUTPUT
+            echo "templates_hash=$TEMPLATES_HASH" >> $GITHUB_OUTPUT
+            echo "i18n: true (forced)  docs: true (forced)"
+            exit 0
+          fi
+
+          OLD_BUNDLES=""; OLD_DOCS=""; OLD_TEMPLATES=""
+          if [ -f docs/i18n.md ]; then
+            OLD_BUNDLES=$(grep 'bundles:' docs/i18n.md | tail -1 | awk '{print $2}')
+            OLD_DOCS=$(grep 'docs:' docs/i18n.md | tail -1 | awk '{print $2}')
+            OLD_TEMPLATES=$(grep 'templates:' docs/i18n.md | tail -1 | awk '{print $2}')
+          fi
+
+          DO_I18N="false"; DO_DOCS="false"
+          # Templates change → force like b-doc
+          [ "$TEMPLATES_HASH" != "$OLD_TEMPLATES" ] && DO_I18N="true" && DO_DOCS="true"
+          [ "$BUNDLES_HASH" != "$OLD_BUNDLES" ] && DO_I18N="true"
+          [ "$DOCS_HASH" != "$OLD_DOCS" ] && DO_I18N="true"
+          [ "$DOCS_HASH" != "$OLD_DOCS" ] && DO_DOCS="true"
+
+          echo "do_i18n=$DO_I18N" >> $GITHUB_OUTPUT
+          echo "do_docs=$DO_DOCS" >> $GITHUB_OUTPUT
+          echo "bundles_hash=$BUNDLES_HASH" >> $GITHUB_OUTPUT
+          echo "docs_hash=$DOCS_HASH" >> $GITHUB_OUTPUT
+          echo "templates_hash=$TEMPLATES_HASH" >> $GITHUB_OUTPUT
+          echo "i18n: $DO_I18N  docs: $DO_DOCS"
+
+  # ── i18n & Docs ──
+  i18n:
+    needs: prebuild
+    if: always() && !failure() && !cancelled() && (needs.prebuild.outputs.i18n_do == 'true' || needs.prebuild.outputs.docs_do == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      i18n_changed: ${{ needs.prebuild.outputs.i18n_do }}
+      docs_changed: ${{ needs.prebuild.outputs.docs_do }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate i18n status
+        if: needs.prebuild.outputs.i18n_do == 'true'
+        run: |
+          TEMPLATE="assets/templates/i18n.md"
+          OUTPUT="docs/i18n.md"
+          DEFAULT="assets/bundles/en.json"
+          NOW=$(date -u +'%Y-%m-%d %H:%M UTC')
+
+          HEADER_KEYS=4
+          DEFAULT_TOTAL=$(jq '[.. | scalars | select(type == "string")] | length' "$DEFAULT")
+          ACTUAL=$((DEFAULT_TOTAL - HEADER_KEYS))
+
+          ROWS=""
+          for f in $(ls assets/bundles/*.json | sort -r); do
+            LANG=$(jq -r '.lang' "$f")
+            CODE=$(jq -r '.langCode' "$f")
+            REGION=$(jq -r '.langRegion' "$f")
+            TOTAL=$(jq '[.. | scalars | select(type == "string")] | length' "$f")
+            KEYS=$((TOTAL - HEADER_KEYS))
+            PCT=$((100 * KEYS / ACTUAL))
+            [ "$PCT" -gt 100 ] && PCT=100
+
+            DOCS=0
+            if [ "$CODE" = "en" ]; then
+              DOCS=$(ls docs/*.md 2>/dev/null | wc -l)
+              [ -f README.md ] && DOCS=$((DOCS + 1))
+            elif [ -d "docs/$CODE" ]; then
+              DOCS=$(find "docs/$CODE" -name '*.md' 2>/dev/null | wc -l)
+            fi
+            HAS_DOC_JSON=""
+            [ -f "assets/docs/$CODE.json" ] && HAS_DOC_JSON=" 📄"
+
+            if [ "$CODE" = "en" ]; then README_LINK="../README.md"
+            else README_LINK="$CODE/README.md"
+            fi
+
+            ROWS="$ROWS| [$LANG]($README_LINK) | \`$CODE\` | $REGION | $KEYS/$ACTUAL ($PCT%) | $DOCS$HAS_DOC_JSON |\n"
+          done
+
+          cp "$TEMPLATE" "$OUTPUT"
+          sed -i "s#{{date}}#$NOW#" "$OUTPUT"
+          sed -i "s#{{rows}}#$ROWS#" "$OUTPUT"
+          sed -i "s#{{bundles_hash}}#${{ needs.prebuild.outputs.bundles_hash }}#" "$OUTPUT"
+          sed -i "s#{{docs_hash}}#${{ needs.prebuild.outputs.docs_hash }}#" "$OUTPUT"
+          sed -i "s#{{templates_hash}}#${{ needs.prebuild.outputs.templates_hash }}#" "$OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: needs.prebuild.outputs.i18n_do == 'true'
+        with:
+          name: i18n-md
+          path: docs/i18n.md
+
+      - name: Generate READMEs
+        if: needs.prebuild.outputs.docs_do == 'true'
+        env:
+          APP_VERSION: ${{ needs.prebuild.outputs.app_version }}
+          FLUTTER_VERSION: ${{ needs.prebuild.outputs.flutter_version }}
+        run: |
+          TEMPLATE="assets/templates/README.md"
+          VERSION="$APP_VERSION"
+          FLUTTER_VER="$FLUTTER_VERSION"
+
+          for DATA in assets/docs/*.json; do
+            LANG=$(basename "$DATA" .json)
+            if [ "$LANG" = "en" ]; then OUTPUT="README.md"
+            else mkdir -p "docs/$LANG"; OUTPUT="docs/$LANG/README.md"
+            fi
+            echo "Generating $OUTPUT from $DATA"
+
+            # Build language switcher
+            LANGS_HTML=""
+            for doc in $(ls assets/docs/*.json | sort -r); do
+              code=$(basename "$doc" .json)
+              label=$(jq -r '.lang' "$doc")
+              region=$(jq -r '.langRegion' "$doc")
+              base=$(echo "$code" | cut -d- -f1)
+              other_count=$(jq -r '.lang' assets/docs/*.json | grep -cFx "$label" || echo 0)
+              if [ "$other_count" -gt 1 ]; then
+                label="$label ($region)"
+              fi
+              if [ "$OUTPUT" = "README.md" ]; then
+                [ "$code" = "en" ] && path="README.md" || path="docs/$code/README.md"
+              else
+                [ "$code" = "en" ] && path="../../README.md" || path="../$code/README.md"
+              fi
+              [ -n "$LANGS_HTML" ] && LANGS_HTML="$LANGS_HTML &nbsp;|&nbsp; "
+              if [ "$code" = "$LANG" ]; then LANGS_HTML="$LANGS_HTML$label"
+              else LANGS_HTML="$LANGS_HTML<a href=\"$path\">$label</a>"
+              fi
+            done
+
+            ICON_PREFIX=""; [[ "$OUTPUT" != "README.md" ]] && ICON_PREFIX="../../"
+            DOC_PREFIX="docs/"; [[ "$OUTPUT" != "README.md" ]] && DOC_PREFIX="../"
+
+            # Extract all fields
+            DESCRIPTION=$(jq -r '.description' "$DATA")
+            FEATURES=$(jq -r '.features' "$DATA")
+            SCREENSHOTS_TITLE=$(jq -r '.screenshots_title' "$DATA")
+            SCREENSHOTS=$(jq -r '.screenshots' "$DATA")
+            PLATFORM_NOTE=$(jq -r '.platform_note' "$DATA")
+            BINARIES_NOTE=$(jq -r '.binaries_note' "$DATA")
+            COMPARISON_INTRO=$(jq -r '.comparison_intro' "$DATA")
+            COL_PRICE=$(jq -r '.col_price' "$DATA")
+            COL_BOOT=$(jq -r '.col_boot' "$DATA")
+            COL_SILENT=$(jq -r '.col_silent' "$DATA")
+            COL_ACCOMPANIED=$(jq -r '.col_accompanied' "$DATA")
+            COL_GUI=$(jq -r '.col_gui' "$DATA")
+            COL_TRAY=$(jq -r '.col_tray' "$DATA")
+            COL_PARAMS=$(jq -r '.col_params' "$DATA")
+            COL_PROXY=$(jq -r '.col_proxy' "$DATA")
+            FREE=$(jq -r '.free' "$DATA")
+            NEEDS_CONFIG=$(jq -r '.needs_config' "$DATA")
+            SUPPORTED=$(jq -r '.supported' "$DATA")
+            NOT_SUPPORTED=$(jq -r '.not_supported' "$DATA")
+            GETTING_STARTED=$(jq -r '.getting_started' "$DATA")
+            CONTRIBUTING_TITLE=$(jq -r '.contributing_title' "$DATA")
+            CONTRIBUTING_INTRO=$(jq -r '.contributing_intro' "$DATA")
+            CONTRIBUTING_CODE_INTRO=$(jq -r '.contributing_code_intro' "$DATA")
+            RUN_TITLE=$(jq -r '.run_title' "$DATA")
+            RUN_INSTRUCTIONS=$(jq -r '.run_instructions' "$DATA")
+            T_TITLE=$(jq -r '.translation_title' "$DATA")
+            T_INTRO=$(jq -r '.translation_intro' "$DATA")
+            CG_TITLE=$(jq -r '.contributing_guidelines_title' "$DATA")
+            CG_ITEMS=$(jq -r '.contributing_guidelines_items' "$DATA")
+            BR_TITLE=$(jq -r '.bug_report_title' "$DATA")
+            BR_INTRO=$(jq -r '.bug_report_intro' "$DATA")
+
+            cp "$TEMPLATE" "$OUTPUT"
+            sed -i "s#{{icon_prefix}}#$ICON_PREFIX#" "$OUTPUT"
+            LANGS_ESC=$(echo "$LANGS_HTML" | sed 's/&/\\&/g')
+            sed -i "s#{{languages}}#$LANGS_ESC#" "$OUTPUT"
+            sed -i "s|{{flutter_version}}|$FLUTTER_VER|" "$OUTPUT"
+            sed -i "s|{{description}}|$DESCRIPTION|" "$OUTPUT"
+            sed -i "s|{{features}}|$FEATURES|" "$OUTPUT"
+            sed -i "s|{{screenshots_title}}|$SCREENSHOTS_TITLE|" "$OUTPUT"
+            sed -i "s|{{screenshots}}|$SCREENSHOTS|" "$OUTPUT"
+            sed -i "s|{{platform_note}}|$PLATFORM_NOTE|" "$OUTPUT"
+            sed -i "s|{{binaries_note}}|$BINARIES_NOTE|" "$OUTPUT"
+            sed -i "s|{{comparison_intro}}|$COMPARISON_INTRO|" "$OUTPUT"
+            sed -i "s|{{col_price}}|$COL_PRICE|" "$OUTPUT"
+            sed -i "s|{{col_boot}}|$COL_BOOT|" "$OUTPUT"
+            sed -i "s|{{col_silent}}|$COL_SILENT|" "$OUTPUT"
+            sed -i "s|{{col_accompanied}}|$COL_ACCOMPANIED|" "$OUTPUT"
+            sed -i "s|{{col_gui}}|$COL_GUI|" "$OUTPUT"
+            sed -i "s|{{col_tray}}|$COL_TRAY|" "$OUTPUT"
+            sed -i "s|{{col_params}}|$COL_PARAMS|" "$OUTPUT"
+            sed -i "s|{{col_proxy}}|$COL_PROXY|" "$OUTPUT"
+            sed -i "s|{{free}}|$FREE|g" "$OUTPUT"
+            sed -i "s|{{needs_config}}|$NEEDS_CONFIG|g" "$OUTPUT"
+            sed -i "s|{{supported}}|$SUPPORTED|g" "$OUTPUT"
+            sed -i "s|{{not_supported}}|$NOT_SUPPORTED|g" "$OUTPUT"
+            sed -i "s|{{getting_started}}|$GETTING_STARTED|" "$OUTPUT"
+            sed -i "s|{{contributing_title}}|$CONTRIBUTING_TITLE|" "$OUTPUT"
+            sed -i "s|{{contributing_intro}}|$CONTRIBUTING_INTRO|" "$OUTPUT"
+            sed -i "s|{{contributing_code_intro}}|$CONTRIBUTING_CODE_INTRO|" "$OUTPUT"
+            sed -i "s|{{run_title}}|$RUN_TITLE|" "$OUTPUT"
+            sed -i "s|{{run_instructions}}|$RUN_INSTRUCTIONS|" "$OUTPUT"
+            sed -i "s|{{translation_title}}|$T_TITLE|" "$OUTPUT"
+            sed -i "s|{{translation_intro}}|$T_INTRO|" "$OUTPUT"
+            sed -i "s|{{contributing_guidelines_title}}|$CG_TITLE|" "$OUTPUT"
+            sed -i "s|{{contributing_guidelines_items}}|$CG_ITEMS|" "$OUTPUT"
+            sed -i "s|{{bug_report_title}}|$BR_TITLE|" "$OUTPUT"
+            sed -i "s|{{bug_report_intro}}|$BR_INTRO|" "$OUTPUT"
+            sed -i "s|](docs/|]($DOC_PREFIX|g" "$OUTPUT"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: needs.prebuild.outputs.docs_do == 'true'
+        with:
+          name: readme-md
+          path: |
+            README.md
+            docs/*/README.md
+
+  # ── Commit ──
+  commit:
+    needs: [prebuild]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply version update
+        if: needs.prebuild.outputs.new_build != ''
+        run: |
+          NEW_VER="${{ needs.prebuild.outputs.synced_version }}"
+          sed -i "s/^version: .*/version: $NEW_VER/" pubspec.yaml
+
+      - name: Download i18n artifact
+        if: needs.prebuild.outputs.i18n_do == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: i18n-md
+          path: docs/
+
+      - name: Download README artifact
+        if: needs.prebuild.outputs.docs_do == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: readme-md
+          path: .
+
+      - name: Build commit message
+        id: msg
+        run: |
+          LINES=""
+          if [ -n "${{ needs.prebuild.outputs.new_build }}" ]; then
+            LINES="${LINES}- Update build number ${{ needs.prebuild.outputs.new_build }}.\n"
+          fi
+          if [ "${{ needs.prebuild.outputs.i18n_do }}" == "true" ]; then
+            LINES="${LINES}- Update i18n.\n"
+          fi
+          if [ "${{ needs.prebuild.outputs.docs_do }}" == "true" ]; then
+            LINES="${LINES}- Update documents.\n"
+          fi
+          MSG="Auto commit by Github Actions\n${LINES}"
+          echo "message=$MSG" >> $GITHUB_OUTPUT
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "$(echo -e '${{ steps.msg.outputs.message }}')\n\n[skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME" || true
+          git push
+
+      - uses: actions/upload-artifact@v4
+        if: needs.prebuild.outputs.new_build != ''
+        with:
+          name: pubspec-synced
+          path: pubspec.yaml
+
+  # ── Windows ──
+  build-windows:
+    needs: [commit, prebuild]
+    if: needs.prebuild.outputs.windows == 'true'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: pubspec-synced
+          path: .
+        continue-on-error: true
+
+      - name: Get version
+        id: ver
+        env:
+          IS_TAG: ${{ needs.prebuild.outputs.is_tag }}
+          SYNCED_VER: ${{ needs.prebuild.outputs.synced_version }}
+        run: |
+          if ($env:IS_TAG -eq 'true') {
+            $v = (Get-Content pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1) -replace '^version:\s+(\S+).*', '$1'
+          } else {
+            $v = $env:SYNCED_VER
+          }
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+          echo "display_version=$($v -replace '\+.*$','')" >> $env:GITHUB_OUTPUT
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate l10n code
+        run: |
+          dart run slang
+          dart run build_runner build --delete-conflicting-outputs
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build Flutter Windows
+        run: flutter build windows --release
+
+      - name: Copy installer script
+        run: |
+          cp windows/scripts/innosetup.iss build/windows/x64/runner/
+          cp assets/images/icon.ico build/windows/x64/runner/alisthelper.ico
+
+      - name: Build installer
+        working-directory: build/windows/x64/runner/
+        run: |
+          iscc /FAlistHelper-installer-${{ steps.ver.outputs.display_version }} innosetup.iss /DAppVersion=${{ steps.ver.outputs.display_version }}
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath AlistHelper-${{ steps.ver.outputs.display_version }}-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AlistHelper-${{ steps.ver.outputs.display_version }}-windows
+          path: |
+            build/windows/x64/runner/Output/AlistHelper-installer-${{ steps.ver.outputs.display_version }}.exe
+            AlistHelper-${{ steps.ver.outputs.display_version }}-windows-x64.zip
+
+  # ── macOS ──
+  build-macos:
+    needs: [commit, prebuild]
+    if: needs.prebuild.outputs.macos == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: pubspec-synced
+          path: .
+        continue-on-error: true
+
+      - name: Get version
+        id: ver
+        env:
+          IS_TAG: ${{ needs.prebuild.outputs.is_tag }}
+          SYNCED_VER: ${{ needs.prebuild.outputs.synced_version }}
+        run: |
+          if [ "$IS_TAG" = "true" ]; then
+            V=$(grep 'version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d+ -f1)
+            echo "version=$V" >> $GITHUB_OUTPUT
+            echo "display_version=$V" >> $GITHUB_OUTPUT
+          else
+            echo "version=$SYNCED_VER" >> $GITHUB_OUTPUT
+            echo "display_version=$(echo $SYNCED_VER | cut -d+ -f1)" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate l10n code
+        run: |
+          dart run slang
+          dart run build_runner build --delete-conflicting-outputs
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Package tar.gz
+        run: |
+          cd build/macos/Build/Products/Release/
+          tar -czf AlistHelper-${{ steps.ver.outputs.display_version }}-macos.tar.gz alisthelper.app
+          hdiutil create -volname "AlistHelper" -srcfolder alisthelper.app -ov -format UDZO AlistHelper-${{ steps.ver.outputs.display_version }}-macos.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AlistHelper-${{ steps.ver.outputs.display_version }}-macos
+          path: |
+            build/macos/Build/Products/Release/AlistHelper-${{ steps.ver.outputs.display_version }}-macos.dmg
+            build/macos/Build/Products/Release/AlistHelper-${{ steps.ver.outputs.display_version }}-macos.tar.gz
+
+  # ── Linux ──
+  build-linux:
+    needs: [commit, prebuild]
+    if: needs.prebuild.outputs.linux == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: pubspec-synced
+          path: .
+        continue-on-error: true
+
+      - name: Get version
+        id: ver
+        env:
+          IS_TAG: ${{ needs.prebuild.outputs.is_tag }}
+          SYNCED_VER: ${{ needs.prebuild.outputs.synced_version }}
+        run: |
+          if [ "$IS_TAG" = "true" ]; then
+            V=$(grep 'version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d+ -f1)
+            echo "version=$V" >> $GITHUB_OUTPUT
+            echo "display_version=$V" >> $GITHUB_OUTPUT
+          else
+            echo "version=$SYNCED_VER" >> $GITHUB_OUTPUT
+            echo "display_version=$(echo $SYNCED_VER | cut -d+ -f1)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate l10n code
+        run: |
+          dart run slang
+          dart run build_runner build --delete-conflicting-outputs
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Build Linux
+        run: flutter build linux --release
+
+      - name: Package tar
+        run: tar -czf AlistHelper-${{ steps.ver.outputs.display_version }}-linux-x64.tar.gz -C build/linux/x64/release/bundle .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AlistHelper-${{ steps.ver.outputs.display_version }}-linux
+          path: AlistHelper-${{ steps.ver.outputs.display_version }}-linux-x64.tar.gz
+
+  # ── Nightly release (dev branch) ──
+  nightly:
+    needs: [prebuild, build-windows, build-macos, build-linux]
+    if: |
+      always() && !failure() && !cancelled() &&
+      needs.prebuild.outputs.do_release == 'false' &&
+      (needs.build-windows.result != 'skipped' ||
+       needs.build-macos.result != 'skipped' ||
+       needs.build-linux.result != 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get short SHA
+        id: sha
+        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Get nightly version
+        id: ver
+        env:
+          NIGHTLY_VER: ${{ needs.prebuild.outputs.synced_version }}
+          NIGHTLY_DATE: ${{ needs.prebuild.outputs.nightly_date }}
+        run: |
+          echo "version=$NIGHTLY_VER" >> $GITHUB_OUTPUT
+          echo "title=Nightly $NIGHTLY_VER $NIGHTLY_DATE" >> $GITHUB_OUTPUT
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f -ls
+
+      - name: Build release body
+        id: body
+        env:
+          MSG: ${{ github.event.head_commit.message || '' }}
+        run: |
+          WIN_CELL=""
+          MACOS_CELL=""
+          LINUX_CELL=""
+          for f in artifacts/AlistHelper-*; do
+            fname=$(basename "$f")
+            URL="https://github.com/\${{ github.repository }}/releases/download/nightly/$fname"
+            case "$fname" in
+              *windows*) WIN_CELL="$WIN_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-blue.svg?logo=windows\"></a><br>" ;;
+              *macos*)   MACOS_CELL="$MACOS_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-silver.svg?logo=apple\"></a><br>" ;;
+              *linux*)   LINUX_CELL="$LINUX_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-orange.svg?logo=linux\"></a><br>" ;;
+            esac
+          done
+          BODY="**Commit**: \`${{ steps.sha.outputs.sha }}\`
+
+          $MSG
+
+          > ⚠️ Automated dev-branch build — may be unstable.
+
+          **Download based on your OS:**
+
+          <table>
+          <tr><th>Platform</th><th>Download</th></tr>"
+          [ -n "$WIN_CELL" ] && BODY="$BODY<tr><td>Windows</td><td>$WIN_CELL</td></tr>"
+          [ -n "$MACOS_CELL" ] && BODY="$BODY<tr><td>macOS</td><td>$MACOS_CELL</td></tr>"
+          [ -n "$LINUX_CELL" ] && BODY="$BODY<tr><td>Linux</td><td>$LINUX_CELL</td></tr>"
+          BODY="$BODY</table>"
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Delete existing nightly release
+        run: |
+          if gh release view "nightly" &>/dev/null; then
+            echo "Deleting existing nightly release"
+            gh release delete "nightly" --yes --cleanup-tag
+          else
+            echo "No existing nightly release"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: ${{ steps.ver.outputs.title }}
+          body: ${{ steps.body.outputs.body }}
+          files: |
+            artifacts/AlistHelper-*
+          draft: false
+          prerelease: true
+          make_latest: false
+
+  # ── Production release ──
+  release:
+    needs: [prebuild, build-windows, build-macos, build-linux]
+    if: |
+      always() && !cancelled() &&
+      needs.prebuild.result != 'failure' &&
+      needs.build-windows.result != 'failure' &&
+      needs.build-macos.result != 'failure' &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+       needs.prebuild.outputs.do_release == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version info
+        id: version
+        run: |
+          if [ "${{ needs.prebuild.outputs.do_release }}" = "true" ]; then
+            VER="${{ needs.prebuild.outputs.release_version }}"
+            DISPLAY_VER=$(echo "$VER" | cut -d+ -f1)
+            echo "version=$DISPLAY_VER" >> $GITHUB_OUTPUT
+            echo "tag=${{ needs.prebuild.outputs.release_tag }}" >> $GITHUB_OUTPUT
+            echo "release_name=${{ needs.prebuild.outputs.release_name }}" >> $GITHUB_OUTPUT
+          else
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            if echo "$COMMIT_MSG" | grep -qE '^r-[0-9]+\.[0-9]+\.[0-9]+'; then
+              VERSION=$(echo "$COMMIT_MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+              echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+              echo "release_name=Release $VERSION" >> $GITHUB_OUTPUT
+            elif echo "$COMMIT_MSG" | grep -qE '^beta-[0-9]+\.[0-9]+\.[0-9]+'; then
+              VERSION=$(echo "$COMMIT_MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+              echo "tag=v$VERSION-beta" >> $GITHUB_OUTPUT
+              echo "release_name=Beta $VERSION" >> $GITHUB_OUTPUT
+            else
+              VERSION=$(grep 'version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d+ -f1)
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+              echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+              echo "release_name=Release $VERSION" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f -ls
+
+      - name: Build release body
+        id: body
+        run: |
+          WIN_CELL=""
+          MACOS_CELL=""
+          LINUX_CELL=""
+          for f in artifacts/AlistHelper-*; do
+            [ -f "$f" ] || continue
+            fname=$(basename "$f")
+            URL="https://github.com/\${{ github.repository }}/releases/download/\${{ steps.version.outputs.tag }}/$fname"
+            case "$fname" in
+              *windows*) WIN_CELL="$WIN_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-blue.svg?logo=windows\"></a><br>" ;;
+              *macos*)   MACOS_CELL="$MACOS_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-silver.svg?logo=apple\"></a><br>" ;;
+              *linux*)   LINUX_CELL="$LINUX_CELL<a href=\"$URL\"><img src=\"https://img.shields.io/badge/x64-orange.svg?logo=linux\"></a><br>" ;;
+            esac
+          done
+          BODY="**Download based on your OS:**
+
+          <table>
+          <tr><th>Platform</th><th>Download</th></tr>"
+          [ -n "$WIN_CELL" ] && BODY="$BODY<tr><td>Windows</td><td>$WIN_CELL</td></tr>"
+          [ -n "$MACOS_CELL" ] && BODY="$BODY<tr><td>macOS</td><td>$MACOS_CELL</td></tr>"
+          [ -n "$LINUX_CELL" ] && BODY="$BODY<tr><td>Linux</td><td>$LINUX_CELL</td></tr>"
+          BODY="$BODY</table>"
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.release_name }}
+          append_body: ${{ steps.body.outputs.body }}
+          files: |
+            artifacts/AlistHelper-*
+          draft: false
+          generate_release_notes: true
+          make_latest: true

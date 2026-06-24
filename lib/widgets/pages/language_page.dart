@@ -59,6 +59,6 @@ class LanguagePage extends ConsumerWidget {
 
 extension AppLocaleExt on AppLocale {
   String get humanName {
-    return LocaleSettings.instance.translationMap[this]!.locale;
+    return LocaleSettings.instance.translationMap[this]!.langRegion;
   }
 }
